@@ -40,8 +40,13 @@ func DominantColors(img image.Image, count int) ([]color.RGBA, error) {
 		getClassMeanCov(img, classes, next.left)
 		getClassMeanCov(img, classes, next.right)
 	}
-
 	return getDominantColors(root), nil
+}
+
+func convertColor(col color.Color) []float64 {
+	r, g, b, _ := col.RGBA()
+
+	return []float64{float64(r) / 65535.0, float64(g) / 65535.0, float64(b) / 65535.0}
 }
 
 func getClassMeanCov(img image.Image, classes []uint8, node *colorNode) {
@@ -55,17 +60,13 @@ func getClassMeanCov(img image.Image, classes []uint8, node *colorNode) {
 		0, 0, 0,
 	})
 	pixcount := 0
+
 	for y := 0; y < bounds.Max.Y; y++ {
 		for x := 0; x < bounds.Max.X; x++ {
 			if classes[y*bounds.Max.X+x] != node.classid {
 				continue
 			}
-			r, g, b, _ := img.At(x, y).RGBA()
-			scaled := mat.NewDense(3, 1, []float64{
-				float64(r) / float64(255.0),
-				float64(g) / float64(255.0),
-				float64(b) / float64(255.0),
-			})
+			scaled := mat.NewDense(3, 1, convertColor(img.At(x, y)))
 
 			mean.Add(mean, scaled)
 			tmp.Mul(scaled, scaled.T())
@@ -76,7 +77,7 @@ func getClassMeanCov(img image.Image, classes []uint8, node *colorNode) {
 
 	tmp.Mul(mean, mean.T())
 	cov.Apply(func(i, j int, v float64) float64 {
-		return v / float64(pixcount)
+		return v - tmp.At(j, i)/float64(pixcount)
 	}, cov)
 	mean.Apply(func(i, j int, v float64) float64 {
 		return v / float64(pixcount)
@@ -93,6 +94,7 @@ func getMaxEigenvalueNode(current *colorNode) (*colorNode, error) {
 	queue := []*colorNode{current}
 	var node *colorNode
 	ret := current
+
 	if current.left == nil && current.right == nil {
 		return current, nil
 	}
@@ -163,15 +165,7 @@ func partitionClass(img image.Image, classes []uint8, nextid uint8, node *colorN
 				continue
 			}
 
-			r, g, b, _ := img.At(x, y).RGBA()
-			thisValue.Mul(
-				eig,
-				mat.NewDense(3, 1, []float64{
-					float64(r) / float64(255.0),
-					float64(g) / float64(255.0),
-					float64(b) / float64(255.0),
-				}),
-			)
+			thisValue.Mul(eig, mat.NewDense(3, 1, convertColor(img.At(x, y))))
 
 			if thisValue.At(0, 0) <= cmpValue.At(0, 0) {
 				classes[pos] = newidleft
