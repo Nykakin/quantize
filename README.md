@@ -8,13 +8,14 @@ This package reimplements hierarchical quantization described in [this tutorial]
 package main
 
 import (
-    "fmt"
-
     "image"
+    "image/color"
     _ "image/jpeg"
+    _ "image/png"
     "os"
 
     "github.com/Nykakin/quantize"
+    "github.com/joshdk/preview"
 )   
 
 func main() {
@@ -32,8 +33,13 @@ func main() {
     if err != nil {
         panic(err)
     }    
-    for _, c := range colors {
-        fmt.Printf("#%.2X%.2X%.2X\n", c.R, c.G, c.B)
+
+    palette := make([]color.Color, len(colors))
+    for index, clr := range colors {
+    	palette[index] = clr
     }
+
+    // Display our new palette
+    preview.Show(palette)
 }
 ```
