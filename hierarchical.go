@@ -111,14 +111,6 @@ func getMaxEigenvalueNode(current *colorNode) (*colorNode, error) {
 			return nil, errors.New("bad factorization")
 		}
 
-		eigenvalues := eigen.Values(nil)
-		maxValue := real(eigenvalues[0])
-		for _, i := range eigenvalues[1:] {
-			if real(i) > maxValue {
-				maxValue = real(i)
-			}
-		}
-
 		val := real(eigen.Values(nil)[0])
 		if val > maxEigen {
 			maxEigen = val
@@ -141,18 +133,7 @@ func partitionClass(img image.Image, classes []uint8, nextid uint8, node *colorN
 		return errors.New("bad factorization")
 	}
 
-	eigenvalues := eigen.Values(nil)
-	maxEigenvalue := real(eigenvalues[0])
-	maxEigenvalueIndex := 0
-	if real(eigenvalues[1]) > maxEigenvalue {
-		maxEigenvalue = real(eigenvalues[1])
-		maxEigenvalueIndex = 1
-	}
-	if real(eigenvalues[2]) > maxEigenvalue {
-		maxEigenvalueIndex = 2
-	}
-
-	eig := mat.NewDense(1, 3, eigen.Vectors().RawRowView(maxEigenvalueIndex))
+	eig := mat.NewDense(1, 3, eigen.Vectors().RawRowView(0))
 	cmpValue.Mul(eig, &node.mean)
 
 	node.left = &colorNode{classid: newidleft}
