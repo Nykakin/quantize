@@ -1,5 +1,7 @@
 ﻿# quantize
 
+> This package is not yet production ready
+
 This package reimplements hierarchical quantization described in [this tutorial](http://aishack.in/tutorials/dominant-color/) in Go programming language. [Gonum](https://github.com/gonum/gonum) library was used for matrix computations instead of OpenCV.
 
 ```go
