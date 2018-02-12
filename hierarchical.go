@@ -4,6 +4,7 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"sort"
 
 	"gonum.org/v1/gonum/mat"
 )
@@ -12,6 +13,7 @@ type colorNode struct {
 	mean    mat.Dense
 	cov     mat.Dense
 	classid uint8
+	count   uint64
 
 	left  *colorNode
 	right *colorNode
@@ -149,8 +151,10 @@ func partitionClass(img image.Image, classes []uint8, nextid uint8, node *colorN
 			thisValue.Mul(eig, mat.NewDense(3, 1, convertColor(img.At(x, y))))
 
 			if thisValue.At(0, 0) <= cmpValue.At(0, 0) {
+				node.left.count++
 				classes[pos] = newidleft
 			} else {
+				node.right.count++
 				classes[pos] = newidright
 			}
 		}
@@ -186,6 +190,7 @@ func getLeaves(root *colorNode) []*colorNode {
 		}
 		ret = append(ret, current)
 	}
+	sort.Sort(sort.Reverse(ByCount(ret)))
 	return ret
 }
 
@@ -210,3 +215,9 @@ func getNextClassid(root *colorNode) uint8 {
 
 	return maxid + 1
 }
+
+type ByCount []*colorNode
+
+func (c ByCount) Len() int           { return len(c) }
+func (c ByCount) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
+func (c ByCount) Less(i, j int) bool { return c[i].count < c[j].count }
