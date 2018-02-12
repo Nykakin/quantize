@@ -43,3 +43,5 @@ func main() {
     preview.Show(palette)
 }
 ```
+
+Demo and comparison with algorithms from different repositories can be found [here](https://github.com/Nykakin/QuantizationTournament).
