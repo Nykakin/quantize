@@ -47,7 +47,11 @@ func DominantColors(img image.Image, count int) ([]color.RGBA, error) {
 }
 
 func convertColor(col color.Color) []float64 {
-	r, g, b, _ := col.RGBA()
+	r, g, b, a := col.RGBA()
+	// TODO: handle transparency more smartly
+	if a == 0 {
+		return []float64{1.0, 1.0, 1.0}
+	}
 
 	return []float64{float64(r) / 65535.0, float64(g) / 65535.0, float64(b) / 65535.0}
 }
