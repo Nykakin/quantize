@@ -4,6 +4,7 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"math"
 	"sort"
 
 	"gonum.org/v1/gonum/mat"
@@ -100,6 +101,8 @@ func getMaxEigenvalueNode(current *colorNode) (*colorNode, error) {
 	if current.left == nil && current.right == nil {
 		return current, nil
 	}
+
+LOOP:
 	for len(queue) > 0 {
 		node, queue = queue[len(queue)-1], queue[:len(queue)-1]
 
@@ -107,6 +110,14 @@ func getMaxEigenvalueNode(current *colorNode) (*colorNode, error) {
 			queue = append(queue, node.left)
 			queue = append(queue, node.right)
 			continue
+		}
+
+		for i := 0; i < 3; i++ {
+			for j := 0; j < 3; j++ {
+				if math.IsNaN(node.cov.At(j, i)) {
+					continue LOOP
+				}
+			}
 		}
 
 		if !eigen.Factorize(&node.cov, true, true) {
