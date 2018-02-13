@@ -29,7 +29,8 @@ func main() {
         panic(err)
     }
 
-    colors, err := quantize.DominantColors(img, 5)
+    quantizer := quantize.NewHierarhicalQuantizer()
+    colors, err := quantize.Quantize(img, 5)
     if err != nil {
         panic(err)
     }    

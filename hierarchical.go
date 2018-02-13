@@ -71,14 +71,14 @@ func (hq hierarhicalQuantizer) Quantize(img image.Image, count int) ([]color.RGB
 	return getDominantColors(root), nil
 }
 
-func convertColor(col color.Color) []float64 {
+func convertColor(col color.Color) (color []float64, isTransparent bool) {
 	r, g, b, a := col.RGBA()
 	// TODO: handle transparency more smartly
 	if a == 0 {
-		return []float64{1.0, 1.0, 1.0}
+		return nil, true
 	}
 
-	return []float64{float64(r) / 65535.0, float64(g) / 65535.0, float64(b) / 65535.0}
+	return []float64{float64(r) / 65535.0, float64(g) / 65535.0, float64(b) / 65535.0}, false
 }
 
 func (hq hierarhicalQuantizer) getClassMeanCov(img image.Image, classes []uint8, node *colorNode) {
@@ -98,7 +98,11 @@ func (hq hierarhicalQuantizer) getClassMeanCov(img image.Image, classes []uint8,
 			if classes[y*bounds.Max.X+x] != node.classid {
 				continue
 			}
-			colors := convertColor(img.At(x, y))
+
+			colors, isTransparent := convertColor(img.At(x, y))
+			if isTransparent {
+				continue
+			}
 			hq.tmp3x1.SetVec(0, colors[0])
 			hq.tmp3x1.SetVec(1, colors[1])
 			hq.tmp3x1.SetVec(2, colors[2])
@@ -185,7 +189,10 @@ func (hq hierarhicalQuantizer) partitionClass(img image.Image, classes []uint8, 
 				continue
 			}
 
-			colors := convertColor(img.At(x, y))
+			colors, isTransparent := convertColor(img.At(x, y))
+			if isTransparent {
+				continue
+			}
 			hq.tmp3x1.SetVec(0, colors[0])
 			hq.tmp3x1.SetVec(1, colors[1])
 			hq.tmp3x1.SetVec(2, colors[2])
