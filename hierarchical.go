@@ -11,8 +11,8 @@ import (
 )
 
 type colorNode struct {
-	mean    mat.Dense
-	cov     mat.Dense
+	mean    *mat.Dense
+	cov     *mat.Dense
 	classid uint8
 	count   uint64
 
@@ -20,7 +20,32 @@ type colorNode struct {
 	right *colorNode
 }
 
-func DominantColors(img image.Image, count int) ([]color.RGBA, error) {
+func newColorNode(classid uint8) *colorNode {
+    return &colorNode{
+        classid: classid,
+	    mean: mat.NewDense(3, 1, []float64{0, 0, 0}),
+    	cov: mat.NewDense(3, 3, []float64{
+		    0, 0, 0,
+		    0, 0, 0,
+		    0, 0, 0,
+    	}),
+    }
+}
+
+type hierarhicalQuantizer struct {
+    tmp3x3 *mat.Dense
+    tmp3x1 *mat.Dense
+    eigen mat.Eigen
+}
+
+func NewHierarhicalQuantizer() hierarhicalQuantizer {
+    return hierarhicalQuantizer {
+        tmp3x3: mat.NewDense(3, 3, nil),
+        tmp3x1: mat.NewDense(3, 1, nil),
+    }
+}
+
+func (hq hierarhicalQuantizer) Quantize(img image.Image, count int) ([]color.RGBA, error) {
 	bounds := img.Bounds()
 	pixelCount := bounds.Max.X * bounds.Max.Y
 
@@ -28,20 +53,20 @@ func DominantColors(img image.Image, count int) ([]color.RGBA, error) {
 	for i := range classes {
 		classes[i] = 1
 	}
-	root := &colorNode{classid: 1}
+	root := newColorNode(1)
 
-	getClassMeanCov(img, classes, root)
+	hq.getClassMeanCov(img, classes, root)
 	for i := 0; i < count-1; i++ {
-		next, err := getMaxEigenvalueNode(root)
+		next, err := hq.getMaxEigenvalueNode(root)
 		if err != nil {
 			return nil, err
 		}
-		err = partitionClass(img, classes, getNextClassid(root), next)
+		err = hq.partitionClass(img, classes, getNextClassid(root), next)
 		if err != nil {
 			return nil, err
 		}
-		getClassMeanCov(img, classes, next.left)
-		getClassMeanCov(img, classes, next.right)
+		hq.getClassMeanCov(img, classes, next.left)
+		hq.getClassMeanCov(img, classes, next.right)
 	}
 	return getDominantColors(root), nil
 }
@@ -56,7 +81,7 @@ func convertColor(col color.Color) []float64 {
 	return []float64{float64(r) / 65535.0, float64(g) / 65535.0, float64(b) / 65535.0}
 }
 
-func getClassMeanCov(img image.Image, classes []uint8, node *colorNode) {
+func (hq hierarhicalQuantizer) getClassMeanCov(img image.Image, classes []uint8, node *colorNode) {
 	bounds := img.Bounds()
 	tmp := mat.NewDense(3, 3, nil)
 
@@ -90,13 +115,11 @@ func getClassMeanCov(img image.Image, classes []uint8, node *colorNode) {
 		return v / float64(pixcount)
 	}, mean)
 
-	node.mean.Clone(mean)
-	node.cov.Clone(cov)
+	node.mean = mean
+	node.cov = cov
 }
 
-func getMaxEigenvalueNode(current *colorNode) (*colorNode, error) {
-	var eigen mat.Eigen
-
+func (hq hierarhicalQuantizer) getMaxEigenvalueNode(current *colorNode) (*colorNode, error) {
 	maxEigen := float64(-1)
 	queue := []*colorNode{current}
 	var node *colorNode
@@ -124,11 +147,11 @@ LOOP:
 			}
 		}
 
-		if !eigen.Factorize(&node.cov, true, true) {
+		if !hq.eigen.Factorize(node.cov, true, true) {
 			return nil, errors.New("bad factorization")
 		}
 
-		val := real(eigen.Values(nil)[0])
+		val := real(hq.eigen.Values(nil)[0])
 		if val > maxEigen {
 			maxEigen = val
 			ret = node
@@ -137,8 +160,7 @@ LOOP:
 	return ret, nil
 }
 
-func partitionClass(img image.Image, classes []uint8, nextid uint8, node *colorNode) error {
-	var eigen mat.Eigen
+func (hq hierarhicalQuantizer) partitionClass(img image.Image, classes []uint8, nextid uint8, node *colorNode) error {
 	var cmpValue mat.Dense
 	var thisValue mat.Dense
 
@@ -146,15 +168,15 @@ func partitionClass(img image.Image, classes []uint8, nextid uint8, node *colorN
 	newidleft := nextid
 	newidright := nextid + 1
 
-	if !eigen.Factorize(&node.cov, true, true) {
+	if !hq.eigen.Factorize(node.cov, true, true) {
 		return errors.New("bad factorization")
 	}
 
-	eig := mat.NewDense(1, 3, eigen.Vectors().RawRowView(0))
-	cmpValue.Mul(eig, &node.mean)
+	eig := mat.NewDense(1, 3, hq.eigen.Vectors().RawRowView(0))
+	cmpValue.Mul(eig, node.mean)
 
-	node.left = &colorNode{classid: newidleft}
-	node.right = &colorNode{classid: newidright}
+	node.left = newColorNode(newidleft)
+	node.right = newColorNode(newidright)
 
 	for y := 0; y < bounds.Max.Y; y++ {
 		for x := 0; x < bounds.Max.X; x++ {
