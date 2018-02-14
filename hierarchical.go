@@ -32,6 +32,10 @@ func newColorNode(classid uint8) *colorNode {
 	}
 }
 
+type Quantizer interface {
+	Quantize(img image.Image, count int) ([]color.RGBA, error)
+}
+
 type hierarhicalQuantizer struct {
 	tmp3x3 *mat.Dense
 	tmp3x1 *mat.VecDense
