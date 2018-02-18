@@ -101,7 +101,7 @@ func (hq hierarhicalQuantizer) getClassMeanCov(img image.Image, classes []uint8,
 			hq.tmp3x1.setVec(color)
 			node.mean.add(node.mean, hq.tmp3x1)
 			hq.tmp1x3.t(hq.tmp3x1)
-			hq.tmp3x3.mul(hq.tmp3x1, hq.tmp1x3)
+			hq.tmp3x3.mul3x1And1x3(hq.tmp3x1, hq.tmp1x3)
 			node.cov.add(node.cov, hq.tmp3x3)
 			pixcount += 1
 		}

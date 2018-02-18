@@ -50,6 +50,14 @@ func (m mat3x3) mul(l, r matrix) {
 	}
 }
 
+func (m mat3x3) mul3x1And1x3(l vec3x1, r vec1x3) {
+	for i := 0; i < 3; i++ {
+		for j := 0; j < 3; j++ {
+		    m[i][j] = l[i][0] * r[0][j]
+		}
+	}
+}
+
 func (m mat3x3) add(l, r matrix) {
 	for i := 0; i < 3; i++ {
 		for j := 0; j < 3; j++ {
