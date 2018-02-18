@@ -1,18 +1,17 @@
 package quantize
 
 import (
-	"errors"
 	"image"
 	"image/color"
 	"math"
 	"sort"
 
-	"gonum.org/v1/gonum/mat"
+	"github.com/Nykakin/eigenvalues"
 )
 
 type colorNode struct {
-	mean    *mat.VecDense
-	cov     *mat.Dense
+	mean    vec3x1
+	cov     mat3x3
 	classid uint8
 	count   uint64
 
@@ -23,12 +22,8 @@ type colorNode struct {
 func newColorNode(classid uint8) *colorNode {
 	return &colorNode{
 		classid: classid,
-		mean:    mat.NewVecDense(3, []float64{0, 0, 0}),
-		cov: mat.NewDense(3, 3, []float64{
-			0, 0, 0,
-			0, 0, 0,
-			0, 0, 0,
-		}),
+		mean:    newVec3x1(),
+		cov:     newMat3x3(),
 	}
 }
 
@@ -37,15 +32,16 @@ type Quantizer interface {
 }
 
 type hierarhicalQuantizer struct {
-	tmp3x3 *mat.Dense
-	tmp3x1 *mat.VecDense
-	eigen  mat.Eigen
+	tmp3x3 mat3x3
+	tmp3x1 vec3x1
+	tmp1x3 vec1x3
 }
 
 func NewHierarhicalQuantizer() hierarhicalQuantizer {
 	return hierarhicalQuantizer{
-		tmp3x3: mat.NewDense(3, 3, nil),
-		tmp3x1: mat.NewVecDense(3, nil),
+		tmp3x3: newMat3x3(),
+		tmp3x1: newVec3x1(),
+		tmp1x3: newVec1x3(),
 	}
 }
 
@@ -88,13 +84,8 @@ func convertColor(col color.Color) (color []float64, isTransparent bool) {
 func (hq hierarhicalQuantizer) getClassMeanCov(img image.Image, classes []uint8, node *colorNode) {
 	bounds := img.Bounds()
 
-	node.mean.SetVec(0, 0)
-	node.mean.SetVec(1, 0)
-	node.mean.SetVec(2, 0)
-	node.cov.Apply(func(i, j int, v float64) float64 {
-		return 0
-	}, node.cov)
-
+	node.mean.set(0)
+	node.cov.set(0)
 	pixcount := 0
 
 	for y := 0; y < bounds.Max.Y; y++ {
@@ -103,28 +94,29 @@ func (hq hierarhicalQuantizer) getClassMeanCov(img image.Image, classes []uint8,
 				continue
 			}
 
-			colors, isTransparent := convertColor(img.At(x, y))
+			color, isTransparent := convertColor(img.At(x, y))
 			if isTransparent {
 				continue
 			}
-			hq.tmp3x1.SetVec(0, colors[0])
-			hq.tmp3x1.SetVec(1, colors[1])
-			hq.tmp3x1.SetVec(2, colors[2])
-
-			node.mean.AddVec(node.mean, hq.tmp3x1)
-			hq.tmp3x3.Mul(hq.tmp3x1, hq.tmp3x1.T())
-			node.cov.Add(node.cov, hq.tmp3x3)
+			hq.tmp3x1.setVec(color)
+			node.mean.add(node.mean, hq.tmp3x1)
+			hq.tmp1x3.t(hq.tmp3x1)
+			hq.tmp3x3.mul(hq.tmp3x1, hq.tmp1x3)
+			node.cov.add(node.cov, hq.tmp3x3)
 			pixcount += 1
 		}
 	}
 
-	hq.tmp3x3.Mul(node.mean, node.mean.T())
-	node.cov.Apply(func(i, j int, v float64) float64 {
-		return v - hq.tmp3x3.At(j, i)/float64(pixcount)
+	hq.tmp1x3.t(node.mean)
+	hq.tmp3x3.mul(node.mean, hq.tmp1x3)
+	node.cov.apply(func(i, j int, v float64) float64 {
+		return v - hq.tmp3x3.at(j, i)/float64(pixcount)
 	}, node.cov)
-	node.mean.SetVec(0, node.mean.AtVec(0)/float64(pixcount))
-	node.mean.SetVec(1, node.mean.AtVec(1)/float64(pixcount))
-	node.mean.SetVec(2, node.mean.AtVec(2)/float64(pixcount))
+	node.mean.setVec([]float64{
+		node.mean.atVec(0) / float64(pixcount),
+		node.mean.atVec(1) / float64(pixcount),
+		node.mean.atVec(2) / float64(pixcount),
+	})
 }
 
 func (hq hierarhicalQuantizer) getMaxEigenvalueNode(current *colorNode) (*colorNode, error) {
@@ -149,17 +141,15 @@ LOOP:
 
 		for i := 0; i < 3; i++ {
 			for j := 0; j < 3; j++ {
-				if math.IsNaN(node.cov.At(j, i)) {
+				if math.IsNaN(node.cov.at(j, i)) {
 					continue LOOP
 				}
 			}
 		}
 
-		if !hq.eigen.Factorize(node.cov, true, true) {
-			return nil, errors.New("bad factorization")
-		}
+		r := eigenvalues.NewEigenvalueDecomposition(node.cov)
+		val := r.EigenvaluesReal()[0]
 
-		val := real(hq.eigen.Values(nil)[0])
 		if val > maxEigen {
 			maxEigen = val
 			ret = node
@@ -169,19 +159,17 @@ LOOP:
 }
 
 func (hq hierarhicalQuantizer) partitionClass(img image.Image, classes []uint8, nextid uint8, node *colorNode) error {
-	var cmpValue mat.Dense
-	var thisValue mat.Dense
+	cmpValue := newMat3x3()
+	thisValue := newMat3x3()
 
 	bounds := img.Bounds()
 	newidleft := nextid
 	newidright := nextid + 1
 
-	if !hq.eigen.Factorize(node.cov, true, true) {
-		return errors.New("bad factorization")
-	}
-
-	eig := mat.NewDense(1, 3, hq.eigen.Vectors().RawRowView(0))
-	cmpValue.Mul(eig, node.mean)
+	r := eigenvalues.NewEigenvalueDecomposition(node.cov)
+	eig := newVec3x1()
+	eig.setVec(r.Eigenvector()[0])
+	cmpValue.mul(eig, node.mean)
 
 	node.left = newColorNode(newidleft)
 	node.right = newColorNode(newidright)
@@ -193,17 +181,14 @@ func (hq hierarhicalQuantizer) partitionClass(img image.Image, classes []uint8, 
 				continue
 			}
 
-			colors, isTransparent := convertColor(img.At(x, y))
+			color, isTransparent := convertColor(img.At(x, y))
 			if isTransparent {
 				continue
 			}
-			hq.tmp3x1.SetVec(0, colors[0])
-			hq.tmp3x1.SetVec(1, colors[1])
-			hq.tmp3x1.SetVec(2, colors[2])
+			hq.tmp3x1.setVec(color)
+			thisValue.mul(eig, hq.tmp3x1)
 
-			thisValue.Mul(eig, hq.tmp3x1)
-
-			if thisValue.At(0, 0) <= cmpValue.At(0, 0) {
+			if thisValue.at(0, 0) <= cmpValue.at(0, 0) {
 				node.left.count++
 				classes[pos] = newidleft
 			} else {
@@ -220,9 +205,9 @@ func getDominantColors(root *colorNode) []color.RGBA {
 	ret := []color.RGBA{}
 	for _, leave := range getLeaves(root) {
 		c := color.RGBA{
-			uint8(leave.mean.At(0, 0) * float64(255.0)),
-			uint8(leave.mean.At(1, 0) * float64(255.0)),
-			uint8(leave.mean.At(2, 0) * float64(255.0)),
+			uint8(leave.mean.atVec(0) * float64(255.0)),
+			uint8(leave.mean.atVec(1) * float64(255.0)),
+			uint8(leave.mean.atVec(2) * float64(255.0)),
 			255,
 		}
 		ret = append(ret, c)
