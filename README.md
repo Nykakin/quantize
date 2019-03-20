@@ -28,7 +28,7 @@ func main() {
     }
 
     quantizer := quantize.NewHierarhicalQuantizer()
-    colors, err := quantize.Quantize(img, 5)
+    colors, err := quantizer.Quantize(img, 5)
     if err != nil {
         panic(err)
     }    
